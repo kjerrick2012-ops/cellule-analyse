@@ -88,7 +88,7 @@ async function fetchRealOdds(comp, sport) {
 // ---------------------------------------------------------------------
 // 2) Analyse experte via l'API Anthropic (avec recherche web)
 // ---------------------------------------------------------------------
-async function analyze(sport, comp, oddsData) {
+async function analyze(sport, comp, oddsData, history) {
   const sys =
     `Tu es un analyste sportif professionnel, rigoureux et méthodique, expert de ${sport}, rattaché à : ${comp}. ` +
     `Tu analyses la réalité du match (forme récente, confrontations directes, absences, contexte, stats clés) ` +
@@ -98,6 +98,20 @@ async function analyze(sport, comp, oddsData) {
     `(3) ne gonfle JAMAIS la confiance pour faire plaisir ; ` +
     `(4) n'invente JAMAIS de statistiques — base-toi uniquement sur des données réelles ; ` +
     `(5) si tu ne peux pas vérifier une donnée, baisse la confiance et signale-le dans "risk". Date du jour : ${TODAY}.`;
+
+  // Boucle d'apprentissage : on confronte l'expert à ses résultats passés.
+  let learning = "";
+  if (Array.isArray(history) && history.length) {
+    const lost = history.filter(h => h.result === "perdu");
+    learning =
+      `\n\nMÉMOIRE — voici tes paris passés sur cette compétition et leur résultat réel :\n` +
+      JSON.stringify(history) +
+      `\n\nAVANT de proposer tes nouveaux paris, analyse SANS COMPLAISANCE tes paris PERDANTS` +
+      (lost.length ? ` (${lost.length} perte(s))` : "") +
+      ` : quel type de marché ou quelle erreur de jugement t'a coûté ? ` +
+      `Tire-en une correction concrète et applique-la : sois plus prudent sur les marchés/situations où tu t'es trompé, ` +
+      `et n'attribue une confiance élevée que si la leçon passée est respectée. La performance réelle prime sur l'apparence.`;
+  }
 
   const schema = `{"picks":[{"match":"Équipe A vs Équipe B","competition":"compétition réelle","date":"jour + heure","market":"option de pari recommandée","confidence":<entier 0-100>,"odds":<cote décimale ex 1.65>,"form":"forme des 2 camps","rationale":"justification ≤ 25 mots","risk":"principal risque"}],"note":""}`;
 
@@ -109,7 +123,8 @@ async function analyze(sport, comp, oddsData) {
       `Choisis EXACTEMENT 2 paris parmi ces matchs. Utilise la recherche web pour vérifier forme, absences et contexte. ` +
       `Dans "odds", reprends la cote réelle correspondant au marché que tu recommandes (ou la plus proche). ` +
       `Exploite tout l'éventail des marchés pour viser une confiance honnêtement élevée (double chance, Over/Under, etc.) sans la gonfler. ` +
-      `Réponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
+      learning +
+      `\nRéponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
   } else {
     user =
       `Recherche sur le web les matchs réels programmés cette semaine (à partir du ${TODAY}) liés à "${comp}". ` +
@@ -117,7 +132,8 @@ async function analyze(sport, comp, oddsData) {
       `Si "${comp}" a peu ou pas de matchs, ÉLARGIS : divisions inférieures (Ligue 1 → Ligue 2, National), coupes, ligues voisines, ` +
       `ou matchs internationaux en cours — jusqu'à trouver 2 paris fiables. ` +
       `Exploite tout l'éventail des marchés pour une confiance honnêtement haute (double chance 1X/X2, Over/Under, BTTS, handicap, sets…) sans la gonfler. ` +
-      `Indique la compétition réelle de chaque pari. Réponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
+      learning +
+      `\nIndique la compétition réelle de chaque pari. Réponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
   }
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -166,10 +182,11 @@ module.exports = async (req, res) => {
     if (typeof body === "string") { try { body = JSON.parse(body); } catch (_) { body = {}; } }
     const sport = (body && body.sport) || "Football";
     const comp = (body && body.comp) || "";
+    const history = (body && body.history) || [];
     if (!comp) { res.status(400).json({ error: "Compétition manquante" }); return; }
 
     const oddsData = await fetchRealOdds(comp, sport);
-    const parsed = await analyze(sport, comp, oddsData);
+    const parsed = await analyze(sport, comp, oddsData, history);
 
     res.status(200).json({
       picks: parsed.picks || [],
