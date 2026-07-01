@@ -88,17 +88,20 @@ async function fetchRealOdds(comp, sport) {
 // ---------------------------------------------------------------------
 // 2) Analyse experte via l'API Anthropic (avec recherche web)
 // ---------------------------------------------------------------------
-async function analyze(sport, comp, oddsData, history, threshold) {
+async function analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours) {
   const MINCONF = Number(threshold) || 80;
+  const startH = Number(winStartHours) > 0 ? Number(winStartHours) : 2;
+  const endH = Number(winEndHours) > startH ? Number(winEndHours) : 7 * 24;
   const nowMs = Date.now();
-  const winStart = new Date(nowMs + 2 * 3600 * 1000);      // +2 heures
-  const winEnd = new Date(nowMs + 7 * 24 * 3600 * 1000);   // +7 jours
+  const winStart = new Date(nowMs + startH * 3600 * 1000);
+  const winEnd = new Date(nowMs + endH * 3600 * 1000);
   const fmt = d => d.toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+  const human = h => h < 24 ? `${h} h` : `${Math.round(h / 24)} j`;
   const windowRule =
     `IMPORTANT — FENÊTRE HORAIRE STRICTE : ne retiens QUE les matchs dont le coup d'envoi se situe entre ` +
-    `${fmt(winStart)} (dans 2 heures) et ${fmt(winEnd)} (dans 7 jours). ` +
-    `Vérifie l'heure de début réelle de chaque match : exclus tout match qui commence dans moins de 2 heures (trop proche) ` +
-    `ou dans plus de 7 jours (trop lointain), afin qu'un combiné soit réellement jouable.`;
+    `${fmt(winStart)} (dans ${human(startH)}) et ${fmt(winEnd)} (dans ${human(endH)}). ` +
+    `Vérifie l'heure de début réelle de chaque match : exclus tout match qui commence avant cette borne (trop proche) ` +
+    `ou après (trop lointain), afin qu'un combiné soit réellement jouable.`;
   const sys =
     `Tu es un analyste sportif professionnel, rigoureux et méthodique, expert de ${sport}, rattaché à : ${comp}. ` +
     `Tu analyses la réalité du match (forme récente, confrontations directes, absences, contexte, stats clés) ` +
@@ -193,10 +196,12 @@ module.exports = async (req, res) => {
     const comp = (body && body.comp) || "";
     const history = (body && body.history) || [];
     const threshold = (body && body.threshold) || 80;
+    const winStartHours = (body && body.winStartHours) || 2;
+    const winEndHours = (body && body.winEndHours) || 168;
     if (!comp) { res.status(400).json({ error: "Compétition manquante" }); return; }
 
     const oddsData = await fetchRealOdds(comp, sport);
-    const parsed = await analyze(sport, comp, oddsData, history, threshold);
+    const parsed = await analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours);
 
     res.status(200).json({
       picks: parsed.picks || [],
