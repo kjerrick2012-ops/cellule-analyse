@@ -159,7 +159,7 @@
 <div class="wrap">
   <header class="hd">
     <div>
-      <div class="eyebrow"><span>● EN LIGNE</span><span style="color:var(--dim)">/ <span id="hdr-date"></span></span></div>
+      <div class="eyebrow"><span id="sys-chip">● EN LIGNE</span><span style="color:var(--dim)">/ <span id="hdr-date"></span></span></div>
       <h1 class="title">JEY<span>BET</span></h1>
       <p class="lede">Cellule multi-experts. Recherche réelle, confiance honnête, mémoire des résultats passés.</p>
     </div>
@@ -239,6 +239,30 @@ function gradedFor(comp,limit=10){
   return out.slice(-limit).reverse();
 }
 
+/* ---------- calibrage : ajustement de confiance d'après tes résultats réels ---------- */
+const MINSAMPLE=5;
+function deburr(s){return String(s==null?"":s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();}
+function marketFamily(m){
+  const s=deburr(m);
+  if(/(over|under|plus de|moins de|but|total)/.test(s)) return "Over/Under & buts";
+  if(/(double chance|1x|x2|12 )/.test(s)) return "Double chance";
+  if(/(btts|deux equipes|both teams|marquent)/.test(s)) return "Les deux marquent";
+  if(/(handicap)/.test(s)) return "Handicap";
+  if(/(set|jeu|tie-break)/.test(s)) return "Tennis (sets/jeux)";
+  if(/(victoire|gagne|gagnant|1x2|1n2|resultat|winner|vainqueur|nul)/.test(s)) return "Résultat 1X2";
+  return "Autre";
+}
+// renvoie {ok, rate, n, fam} ; ok=false si échantillon insuffisant (< MINSAMPLE)
+function adjustedConf(comp, market){
+  const fam=marketFamily(market);
+  let w=0,t=0;
+  loadHistory().forEach(r=>(r.picks||[]).forEach(p=>{
+    if((p.status==="won"||p.status==="lost") && p.comp===comp && marketFamily(p.market)===fam){ t++; if(p.status==="won") w++; }
+  }));
+  if(t<MINSAMPLE) return {ok:false,n:t,fam};
+  return {ok:true,rate:Math.round(w/t*100),n:t,fam};
+}
+
 /* ---------- appel back-end ---------- */
 async function runExpert(ex){
   const history=gradedFor(ex.comp,10);
@@ -281,6 +305,11 @@ async function launch(){
 async function validateAndReset(){
   const inc=includedPicks();
   if(!inc.length){ state.err="Aucune sélection à enregistrer."; render(); return; }
+  const stake=state.stake||0, bk=state.bankroll||0;
+  if(bk>0 && stake>0.05*bk){
+    const pct=(stake/bk*100).toFixed(0);
+    if(!window.confirm(`Ta mise (${stake.toFixed(2)} €) représente ${pct}% de ta bankroll (${bk.toFixed(2)} €).\n\nLa règle de prudence recommande 2 à 5% maximum. Enregistrer quand même ce coupon ?`)) return;
+  }
   await saveRun();                              // sauvegarde en ligne
   state.experts.forEach(e=>{e.status="idle";e.picks=[];e.note="";e.adjusted=0;}); // remise à zéro
   state.done=false; state.validated=true; state.couponNum=null; state.err="";
@@ -367,12 +396,22 @@ function statusDot(s){
 }
 function pickHTML(e,p){
   const col=p.confidence>=TARGET?"var(--teal)":p.confidence>=THRESHOLD?"var(--gold)":"var(--red)";
+  const adj=adjustedConf(p.comp,p.market);
+  let adjLine;
+  if(adj.ok){
+    const ac=adj.rate>=p.confidence-5?"var(--green)":adj.rate>=p.confidence-15?"var(--gold)":"var(--red)";
+    const verdict=adj.rate>=p.confidence-5?"cohérent":adj.rate>=p.confidence-15?"un peu optimiste":"surestimé";
+    adjLine=`<div class="pmeta" style="margin-top:6px">📊 Ajusté d'après ton historique (${adj.n} paris « ${esc(adj.fam)} ») : <b style="color:${ac};font-family:var(--mono)">${adj.rate}%</b> <span style="color:var(--dim)">— annoncé ${verdict}</span></div>`;
+  } else {
+    adjLine=`<div class="pmeta" style="margin-top:6px;color:var(--dim)">📊 Pas encore assez d'historique pour ajuster (${adj.n}/${MINSAMPLE} paris « ${esc(adj.fam)} »).</div>`;
+  }
   return `<div class="pick ${p.include?"":"out"}">
     <div class="top">
       <div style="min-width:0"><div class="pmatch">${esc(p.match)}</div><div class="pmeta">${esc(p.date)}${p.comp&&p.comp!==e.comp?" · "+esc(p.comp):""}</div></div>
       <label class="pchk"><input type="checkbox" ${p.include?"checked":""} data-act="pick" data-e="${e.id}" data-k="${p.key}"/> coupon</label>
     </div>
     <div class="prow"><span class="mkt">${esc(p.market)}</span><span class="oddsv">@ ${p.odds.toFixed(2)}</span><span class="confv" style="color:${col}">${p.confidence}%</span></div>
+    ${adjLine}
     ${p.rationale?`<div class="pmeta" style="margin-top:6px;color:var(--muted)">${esc(p.rationale)}</div>`:""}
   </div>`;
 }
@@ -448,6 +487,9 @@ function renderAnalyse(){
       </div>
     </div>
     <div style="display:flex;align-items:flex-start;gap:8px;margin:-6px 2px 0;color:var(--muted);font-size:12px;line-height:1.5">${ICO.warn}<span>Les pourcentages sont des <b style="color:var(--text)">estimations</b>, pas des garanties. Mise 2–5% de bankroll maximum. Ton vrai juge, c'est ton taux de réussite dans l'onglet Historique.</span></div>`;
+  if((state.bankroll||0)>0 && (state.stake||0)>0.05*(state.bankroll||0)){
+    html+=`<div class="banner err" style="margin-top:8px">${ICO.warn} Ta mise (${(state.stake||0).toFixed(2)} €) dépasse <b>5%</b> de ta bankroll (${(state.bankroll||0).toFixed(2)} €) — au-delà de la zone de prudence recommandée.</div>`;
+  }
   if(state.err) html+=`<div class="banner err">${ICO.warn} ${esc(state.err)}</div>`;
   if(state.info) html+=`<div class="banner info">✓ ${esc(state.info)}</div>`;
   if(totalGraded>0) html+=`<div class="banner info">📊 Les experts tiennent compte de <b style="color:var(--text)">${totalGraded}</b> résultat(s) passé(s) pour ajuster leurs analyses.</div>`;
@@ -462,7 +504,14 @@ function renderAnalyse(){
         ${couponHTML({kind:"rendement",label:"COMBINÉ RENDEMENT — jusqu'à 20 legs",pct:1,accent:"var(--gold)"},t1,num,dateStr)}
         ${couponHTML({kind:"securite",label:"COMBINÉ SÉCURISÉ — 3 meilleures confiances",pct:2,accent:"var(--teal)"},t2,num,dateStr)}
       </div>${realityHTML(t1)}
-      ${(state.done&&!state.running)?`<div style="margin-top:16px;text-align:center"><button class="go" data-act="validate" style="margin:0;background:var(--green);color:#062317">${ICO.check} VALIDER ET ENREGISTRER DANS L'HISTORIQUE</button><div style="color:var(--dim);font-size:12px;margin-top:6px">Le coupon n'est ajouté à l'historique qu'après validation. Le tableau se réinitialisera ensuite.</div></div>`:""}`;
+      ${(state.done&&!state.running)?(()=>{
+        let lw=0,ll=0; loadHistory().forEach(r=>(r.picks||[]).forEach(p=>{if(p.status==="won")lw++;else if(p.status==="lost")ll++;}));
+        const lt=lw+ll, lossRate=lt?Math.round(ll/lt*100):null;
+        const reminder = lossRate!==null
+          ? `Rappel : sur tes paris notés, ton taux de perte réel est de <b style="color:var(--red)">${lossRate}%</b> (${ll}/${lt}). Mise en conséquence.`
+          : `Rappel : mise 2–5% de bankroll maximum. Les % affichés sont des estimations, pas des garanties.`;
+        return `<div style="margin-top:16px;text-align:center"><button class="go" data-act="validate" style="margin:0;background:var(--green);color:#062317">${ICO.check} VALIDER ET ENREGISTRER DANS L'HISTORIQUE</button><div style="color:var(--muted);font-size:12px;margin-top:8px;line-height:1.5">${reminder}</div><div style="color:var(--dim);font-size:11px;margin-top:4px">Le coupon n'est ajouté à l'historique qu'après validation. Le tableau se réinitialisera ensuite.</div></div>`;
+      })():""}`;
   } else if(state.done){
     html+=`<div class="empty">Aucune sélection n'a franchi le seuil de ${THRESHOLD}%. Résultat honnête : forcer un combiné sous le seuil dégrade le rendement.</div>`;
   }
@@ -585,6 +634,21 @@ function render(){
   const gtot=gw+gl;
   if($("s-win")) $("s-win").textContent = gtot?Math.round(gw/gtot*100)+"%":"—";
   if($("s-loss")) $("s-loss").textContent = gtot?Math.round(gl/gtot*100)+"%":"—";
+  // indicateur d'état système (point 4 : visibilité des pannes)
+  const chip=$("sys-chip");
+  if(chip){
+    const issues=[];
+    if(state.histError) issues.push("historique en ligne");
+    const errExperts=state.experts.filter(e=>e.status==="error");
+    if(errExperts.length){
+      const notes=errExperts.map(e=>deburr(e.note)).join(" ");
+      if(/(credit|quota|solde|insufficient|balance|429|payment)/.test(notes)) issues.push("crédit/quota API");
+      else if(/(401|403|api key|clé|unauthorized)/.test(notes)) issues.push("clé API");
+      else issues.push("analyse");
+    }
+    if(issues.length){ chip.textContent="▲ DÉGRADÉ — "+issues.join(", "); chip.style.color="var(--red)"; }
+    else { chip.textContent="● EN LIGNE"; chip.style.color=""; }
+  }
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===state.tab));
   $("view").innerHTML = state.tab==="analyse"?renderAnalyse():renderHistorique();
   renderModal();
