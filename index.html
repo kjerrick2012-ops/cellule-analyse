@@ -226,14 +226,14 @@ function gradedFor(comp,limit=10){
 async function runExpert(ex){
   const history=gradedFor(ex.comp,10);
   const res=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history})});
+    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history,threshold:THRESHOLD})});
   if(!res.ok){let m="HTTP "+res.status;try{const e=await res.json();if(e&&e.error)m=e.error;}catch(_){}throw new Error(m);}
   const data=await res.json();
   const picks=(data.picks||[]).slice(0,2).map((p,i)=>({
     key:ex.id+"-"+i+"-"+Date.now(),
     match:p.match||"—", comp:p.competition||ex.comp, sport:ex.sport, date:p.date||"", market:p.market||"—",
     confidence:Math.max(0,Math.min(100,Math.round(Number(p.confidence)||0))),
-    odds:Number(p.odds)>1?Number(p.odds):1.5,
+    odds:Number(p.odds)>1?Number(p.odds):1.5, oddsReal:!!p.oddsReal,
     rationale:p.rationale||"", risk:p.risk||"",
     include:(Number(p.confidence)||0)>=THRESHOLD
   }));
@@ -282,7 +282,7 @@ function togglePick(eid,key){const e=state.experts.find(x=>x.id===eid);const p=e
 /* enregistre l'analyse courante dans l'historique en ligne */
 async function saveRun(){
   const inc=includedPicks(); if(!inc.length) return;
-  const picks=inc.map(p=>({match:p.match,comp:p.comp,sport:p.sport,date:p.date,market:p.market,confidence:p.confidence,odds:p.odds,status:"pending"}));
+  const picks=inc.map(p=>({match:p.match,comp:p.comp,sport:p.sport,date:p.date,market:p.market,confidence:p.confidence,odds:p.odds,oddsReal:!!p.oddsReal,status:"pending"}));
   const run={id:Date.now(),num:state.couponNum,date:Date.now(),picks};
   state.history=[...(state.history||[]),run]; // optimiste
   try{await fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({run})});}catch(_){}
@@ -308,6 +308,7 @@ function buildCoupon(legs){
 }
 function couponHTML(opt,t,num,dateStr){
   const stake=state.stake||0;
+  const nReal=t.legs.filter(p=>p.oddsReal).length, nEst=t.legs.length-nReal;
   const rows=t.legs.length?t.legs.map((p)=>`
     <tr>
       <td class="c">${esc(p.date||"à confirmer")}</td>
@@ -315,8 +316,10 @@ function couponHTML(opt,t,num,dateStr){
       <td class="sel">${esc(p.market)}<small>${p.confidence}%</small></td>
       <td class="c">${p.odds.toFixed(2)}</td>
     </tr>`).join(""):"";
+  const oddsInfo = t.legs.length ? `<div style="text-align:center;font-size:11px;color:#555;margin-top:6px">Cotes : ${nReal} réelle(s) · ${nEst} estimée(s)</div>` : "";
   const body=t.legs.length
     ? `<table class="ct"><thead><tr><th>Date/Temps</th><th>Événement</th><th>Sélection</th><th>Cote</th></tr></thead><tbody>${rows}</tbody></table>
+       ${oddsInfo}
        <div class="coupon-foot">
          <span>Cote totale : <b>${t.odds.toFixed(2)}</b></span>
          <span>Proba réelle : <b>${(t.prob*100).toFixed(t.prob<.1?1:0)}%</b></span>
@@ -413,12 +416,13 @@ function renderAnalyse(){
         <div class="num"><input id="stake" type="number" min="0" step="0.5" value="${state.stake}"/><span>€</span></div></div>
       <div class="pill"><span>Seuil</span><b style="color:var(--teal)">${THRESHOLD}%</b><span style="color:var(--dim)">· cible</span><b style="color:var(--gold)">${TARGET}%</b></div>
       <button id="go" class="go" ${state.running||activeCount===0?"disabled":""}>${state.running?ICO.loader+" ANALYSE EN COURS…":ICO.search+" LANCER L'ANALYSE"}</button>
-    </div>`;
+    </div>
+    <div style="display:flex;align-items:flex-start;gap:8px;margin:-6px 2px 0;color:var(--muted);font-size:12px;line-height:1.5">${ICO.warn}<span>Les pourcentages sont des <b style="color:var(--text)">estimations</b>, pas des garanties. Mise 2–5% de bankroll maximum. Ton vrai juge, c'est ton taux de réussite dans l'onglet Historique.</span></div>`;
   if(state.err) html+=`<div class="banner err">${ICO.warn} ${esc(state.err)}</div>`;
   if(state.info) html+=`<div class="banner info">✓ ${esc(state.info)}</div>`;
   if(totalGraded>0) html+=`<div class="banner info">📊 Les experts tiennent compte de <b style="color:var(--text)">${totalGraded}</b> résultat(s) passé(s) pour ajuster leurs analyses.</div>`;
 
-  html+=`<div class="sect"><div class="row"><span class="n">01</span><h2>Stations experts</h2></div><p class="hint">Chaque expert propose 2 paris et apprend de ses résultats passés.</p></div>
+  html+=`<div class="sect"><div class="row"><span class="n">01</span><h2>Stations experts</h2></div><p class="hint">Chaque expert propose 0 à 2 paris — il s'abstient s'il n'a rien de fiable au seuil de ${THRESHOLD}%, et tient compte de ses résultats passés.</p></div>
     <div class="grid">${state.experts.map(expertHTML).join("")}${addCardHTML()}</div>`;
 
   if(inc.length>0){
@@ -440,6 +444,27 @@ function renderHistorique(){
   const errBanner = state.histError ? `<div class="banner err">${ICO.warn} ${esc(state.histError)}</div>` : "";
   const h=loadHistory().slice().reverse();
   if(!h.length) return errBanner+`<div class="empty">Aucune analyse enregistrée pour l'instant. Lance une analyse depuis l'onglet ANALYSE — chaque coupon sera sauvegardé ici (en ligne), et tu pourras noter les résultats (gagné / perdu).</div>`;
+
+  // paris notés, tous confondus
+  const graded=[];
+  loadHistory().forEach(r=>(r.picks||[]).forEach(p=>{ if(p.status==="won"||p.status==="lost") graded.push(p); }));
+
+  // CALIBRAGE : confiance annoncée vs réussite réelle, par tranche
+  let calibHTML="";
+  if(graded.length){
+    const bands=[[80,100,"80–88%"],[70,79,"70–79%"],[60,69,"60–69%"],[0,59,"< 60%"]];
+    const rows=bands.map(([lo,hi,lbl])=>{
+      const g=graded.filter(p=>p.confidence>=lo&&p.confidence<=hi);
+      if(!g.length) return "";
+      const won=g.filter(p=>p.status==="won").length;
+      const real=Math.round(won/g.length*100);
+      const annonce=Math.round(g.reduce((a,p)=>a+p.confidence,0)/g.length);
+      const col=real>=annonce-5?"var(--green)":real>=annonce-15?"var(--gold)":"var(--red)";
+      return `<div class="pe"><span>${lbl} <span style="color:var(--dim)">(${g.length} pari(s))</span></span><span class="rec">annoncé ${annonce}% → <b style="color:${col}">réel ${real}%</b></span></div>`;
+    }).join("");
+    const warn = graded.length<10 ? `<div style="color:var(--gold);font-size:11.5px;margin-top:8px">⚠ Échantillon encore faible (${graded.length} paris notés) — le calibrage devient fiable au-delà de ~30 paris.</div>` : "";
+    if(rows) calibHTML=`<div class="perf"><h3>Calibrage — la confiance annoncée est-elle honnête ?</h3>${rows}${warn}</div>`;
+  }
 
   // performance par compétition
   const perf={};
@@ -476,9 +501,9 @@ function renderHistorique(){
       </div>${picks}</div>`;
   }).join("");
 
-  return errBanner+`<div class="sect"><div class="row"><span class="n">★</span><h2>Historique & apprentissage</h2></div>
-    <p class="hint">Note chaque pari (gagné / perdu) une fois le match joué. Les experts reliront leurs paris perdants pour se corriger à la prochaine analyse.</p></div>
-    ${perfHTML}${runs}`;
+  return errBanner+`<div class="sect"><div class="row"><span class="n">★</span><h2>Historique & suivi</h2></div>
+    <p class="hint">Note chaque pari (gagné / perdu) une fois le match joué. Le calibrage ci-dessous compare la confiance annoncée à ta réussite réelle — c'est ton vrai juge. Les experts relisent ensuite leurs paris perdants pour être plus prudents.</p></div>
+    ${calibHTML}${perfHTML}${runs}`;
 }
 
 function render(){
