@@ -182,7 +182,7 @@ const SEED=[
 ];
 let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,...e});
 
-const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{}};
+const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:""};
 
 /* Catalogue de compétitions groupées (pré-liste d'ajout) */
 const CATALOG={
@@ -202,9 +202,12 @@ const pad2=n=>String(n).padStart(2,"0");
 const fmtDateTime=d=>`${pad2(d.getDate())}.${pad2(d.getMonth()+1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 const genCoupon=()=>String(Math.floor(10000000000+Math.random()*89999999999));
 
-/* ---------- historique (localStorage) ---------- */
-function loadHistory(){ try{return JSON.parse(localStorage.getItem(HKEY))||[];}catch(_){return [];} }
-function saveHistory(arr){ try{localStorage.setItem(HKEY,JSON.stringify(arr));}catch(_){} }
+/* ---------- historique (en ligne, via /api/history) ---------- */
+function loadHistory(){ return state.history||[]; }
+async function fetchHistory(){
+  try{const r=await fetch("/api/history");if(!r.ok)throw 0;const d=await r.json();state.history=d.runs||[];state.histError="";}
+  catch(_){state.history=state.history||[];state.histError="Historique en ligne indisponible (base non configurée ?).";}
+}
 // paris notés (gagné/perdu) pour une compétition, du plus récent au plus ancien
 function gradedFor(comp,limit=10){
   const out=[];
@@ -247,7 +250,7 @@ async function launch(){
   });
   if(anyError) state.err="Certains experts n'ont pas pu terminer — relancez-les ou réessayez.";
   state.running=false; state.done=true;
-  saveRun();
+  await saveRun();
   render();
 }
 async function rerun(id){
@@ -260,20 +263,26 @@ async function rerun(id){
 function includedPicks(){return state.experts.flatMap(e=>e.picks).filter(p=>p.include);}
 function togglePick(eid,key){const e=state.experts.find(x=>x.id===eid);const p=e.picks.find(pp=>pp.key===key);p.include=!p.include;render();}
 
-/* enregistre l'analyse courante dans l'historique (une fois terminée) */
-function saveRun(){
+/* enregistre l'analyse courante dans l'historique en ligne */
+async function saveRun(){
   const inc=includedPicks(); if(!inc.length) return;
   const picks=inc.map(p=>({match:p.match,comp:p.comp,sport:p.sport,date:p.date,market:p.market,confidence:p.confidence,odds:p.odds,status:"pending"}));
   const run={id:Date.now(),num:state.couponNum,date:Date.now(),picks};
-  const h=loadHistory(); h.push(run); saveHistory(h);
+  state.history=[...(state.history||[]),run]; // optimiste
+  try{await fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({run})});}catch(_){}
 }
-/* notation gagné/perdu dans l'historique */
+/* notation gagné/perdu (en ligne) */
 function gradePick(runId,idx,status){
-  const h=loadHistory(); const run=h.find(r=>r.id===runId); if(!run) return;
-  run.picks[idx].status=run.picks[idx].status===status?"pending":status;
-  saveHistory(h); render();
+  const run=(state.history||[]).find(r=>String(r.id)===String(runId)); if(!run) return;
+  run.picks[idx].status=run.picks[idx].status===status?"pending":status; // optimiste
+  render();
+  fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({grade:{runId,idx,status}})}).catch(()=>{});
 }
-function deleteRun(runId){const h=loadHistory().filter(r=>r.id!==runId);saveHistory(h);render();}
+function deleteRun(runId){
+  state.history=(state.history||[]).filter(r=>String(r.id)!==String(runId));
+  render();
+  fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({del:{runId}})}).catch(()=>{});
+}
 
 /* ---------- coupon ---------- */
 function buildCoupon(legs){
@@ -410,8 +419,9 @@ function renderAnalyse(){
 
 /* ---------- rendu : HISTORIQUE ---------- */
 function renderHistorique(){
+  const errBanner = state.histError ? `<div class="banner err">${ICO.warn} ${esc(state.histError)}</div>` : "";
   const h=loadHistory().slice().reverse();
-  if(!h.length) return `<div class="empty">Aucune analyse enregistrée pour l'instant. Lance une analyse depuis l'onglet ANALYSE — chaque coupon sera sauvegardé ici, et tu pourras noter les résultats (gagné / perdu).</div>`;
+  if(!h.length) return errBanner+`<div class="empty">Aucune analyse enregistrée pour l'instant. Lance une analyse depuis l'onglet ANALYSE — chaque coupon sera sauvegardé ici (en ligne), et tu pourras noter les résultats (gagné / perdu).</div>`;
 
   // performance par compétition
   const perf={};
@@ -448,7 +458,7 @@ function renderHistorique(){
       </div>${picks}</div>`;
   }).join("");
 
-  return `<div class="sect"><div class="row"><span class="n">★</span><h2>Historique & apprentissage</h2></div>
+  return errBanner+`<div class="sect"><div class="row"><span class="n">★</span><h2>Historique & apprentissage</h2></div>
     <p class="hint">Note chaque pari (gagné / perdu) une fois le match joué. Les experts reliront leurs paris perdants pour se corriger à la prochaine analyse.</p></div>
     ${perfHTML}${runs}`;
 }
@@ -536,4 +546,5 @@ const ICO={
   share:I('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>','width="15" height="15"'),
 };
 render();
+fetchHistory().then(render);
 </script>
