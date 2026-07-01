@@ -90,6 +90,15 @@ async function fetchRealOdds(comp, sport) {
 // ---------------------------------------------------------------------
 async function analyze(sport, comp, oddsData, history, threshold) {
   const MINCONF = Number(threshold) || 80;
+  const nowMs = Date.now();
+  const winStart = new Date(nowMs + 2 * 3600 * 1000);      // +2 heures
+  const winEnd = new Date(nowMs + 7 * 24 * 3600 * 1000);   // +7 jours
+  const fmt = d => d.toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+  const windowRule =
+    `IMPORTANT — FENÊTRE HORAIRE STRICTE : ne retiens QUE les matchs dont le coup d'envoi se situe entre ` +
+    `${fmt(winStart)} (dans 2 heures) et ${fmt(winEnd)} (dans 7 jours). ` +
+    `Vérifie l'heure de début réelle de chaque match : exclus tout match qui commence dans moins de 2 heures (trop proche) ` +
+    `ou dans plus de 7 jours (trop lointain), afin qu'un combiné soit réellement jouable.`;
   const sys =
     `Tu es un analyste sportif professionnel, rigoureux et méthodique, expert de ${sport}, rattaché à : ${comp}. ` +
     `Tu analyses la réalité du match (forme récente, confrontations directes, absences, contexte, stats clés) ` +
@@ -116,8 +125,6 @@ async function analyze(sport, comp, oddsData, history, threshold) {
 
   const schema = `{"picks":[{"match":"Équipe A vs Équipe B","competition":"compétition réelle","date":"JJ/MM HHhMM (fuseau)","confidence":<entier ${MINCONF}-88>,"odds":<cote décimale ex 1.65>,"oddsReal":<true si cote issue de l'API de cotes, sinon false>,"market":"option de pari","form":"forme des 2 camps","rationale":"justification ≤ 25 mots","risk":"principal risque"}],"note":"si 0 pari : explique pourquoi"}`;
 
-  const windowRule = `IMPORTANT — ne retiens que des matchs programmés dans les 7 PROCHAINS JOURS (à partir d'aujourd'hui ${TODAY}), pour qu'un combiné soit réellement jouable. Écarte tout match plus lointain.`;
-
   let user;
   if (oddsData && oddsData.events.length) {
     user =
@@ -130,7 +137,7 @@ async function analyze(sport, comp, oddsData, history, threshold) {
       `\nRéponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
   } else {
     user =
-      `Recherche sur le web les matchs réels de "${comp}" programmés dans les 7 prochains jours (à partir du ${TODAY}). ` +
+      `Recherche sur le web les matchs réels de "${comp}". ` +
       windowRule + ` ` +
       `Propose 0 à 2 paris, UNIQUEMENT ceux atteignant honnêtement ${MINCONF}% de confiance. Si "${comp}" n'offre rien de fiable, tu peux élargir aux divisions inférieures/coupes/ligues voisines — mais NE REMPLIS PAS pour faire du volume : mieux vaut 0 pari qu'un pari faible. ` +
       `Comme les cotes ne viennent pas d'une API ici, mets "oddsReal":false et donne une cote estimée réaliste. ` +
