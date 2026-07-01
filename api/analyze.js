@@ -88,7 +88,8 @@ async function fetchRealOdds(comp, sport) {
 // ---------------------------------------------------------------------
 // 2) Analyse experte via l'API Anthropic (avec recherche web)
 // ---------------------------------------------------------------------
-async function analyze(sport, comp, oddsData, history) {
+async function analyze(sport, comp, oddsData, history, threshold) {
+  const MINCONF = Number(threshold) || 80;
   const sys =
     `Tu es un analyste sportif professionnel, rigoureux et méthodique, expert de ${sport}, rattaché à : ${comp}. ` +
     `Tu analyses la réalité du match (forme récente, confrontations directes, absences, contexte, stats clés) ` +
@@ -97,41 +98,42 @@ async function analyze(sport, comp, oddsData, history) {
     `(2) plafond réaliste pour un événement sportif ≈ 88, ne dépasse jamais sauf certitude exceptionnelle ; ` +
     `(3) ne gonfle JAMAIS la confiance pour faire plaisir ; ` +
     `(4) n'invente JAMAIS de statistiques — base-toi uniquement sur des données réelles ; ` +
-    `(5) si tu ne peux pas vérifier une donnée, baisse la confiance et signale-le dans "risk". Date du jour : ${TODAY}.`;
+    `(5) si tu ne peux pas vérifier une donnée, baisse la confiance et signale-le dans "risk" ; ` +
+    `(6) QUALITÉ AVANT VOLUME : tu peux renvoyer 0, 1 ou 2 paris. Ne propose QUE des paris dont la confiance honnête atteint au moins ${MINCONF}%. ` +
+    `Si aucun match ne mérite ce seuil cette semaine, renvoie "picks":[] et explique dans "note". Ne remplis JAMAIS pour atteindre un quota. Date du jour : ${TODAY}.`;
 
-  // Boucle d'apprentissage : on confronte l'expert à ses résultats passés.
+  // Résultats passés pris en compte (pas de ré-apprentissage statistique : simple relecture critique).
   let learning = "";
   if (Array.isArray(history) && history.length) {
     const lost = history.filter(h => h.result === "perdu");
     learning =
-      `\n\nMÉMOIRE — voici tes paris passés sur cette compétition et leur résultat réel :\n` +
+      `\n\nRÉSULTATS PASSÉS à prendre en compte (tes paris précédents sur cette compétition et leur issue réelle) :\n` +
       JSON.stringify(history) +
-      `\n\nAVANT de proposer tes nouveaux paris, analyse SANS COMPLAISANCE tes paris PERDANTS` +
+      `\n\nAvant de proposer tes paris, relis SANS COMPLAISANCE tes paris PERDANTS` +
       (lost.length ? ` (${lost.length} perte(s))` : "") +
-      ` : quel type de marché ou quelle erreur de jugement t'a coûté ? ` +
-      `Tire-en une correction concrète et applique-la : sois plus prudent sur les marchés/situations où tu t'es trompé, ` +
-      `et n'attribue une confiance élevée que si la leçon passée est respectée. La performance réelle prime sur l'apparence.`;
+      ` : quel type de marché ou quelle erreur t'a coûté ? Sois plus prudent sur ces situations et n'attribue une confiance élevée que si la leçon est respectée.`;
   }
 
-  const schema = `{"picks":[{"match":"Équipe A vs Équipe B","competition":"compétition réelle","date":"jour + heure","market":"option de pari recommandée","confidence":<entier 0-100>,"odds":<cote décimale ex 1.65>,"form":"forme des 2 camps","rationale":"justification ≤ 25 mots","risk":"principal risque"}],"note":""}`;
+  const schema = `{"picks":[{"match":"Équipe A vs Équipe B","competition":"compétition réelle","date":"JJ/MM HHhMM (fuseau)","confidence":<entier ${MINCONF}-88>,"odds":<cote décimale ex 1.65>,"oddsReal":<true si cote issue de l'API de cotes, sinon false>,"market":"option de pari","form":"forme des 2 camps","rationale":"justification ≤ 25 mots","risk":"principal risque"}],"note":"si 0 pari : explique pourquoi"}`;
+
+  const windowRule = `IMPORTANT — ne retiens que des matchs programmés dans les 7 PROCHAINS JOURS (à partir d'aujourd'hui ${TODAY}), pour qu'un combiné soit réellement jouable. Écarte tout match plus lointain.`;
 
   let user;
   if (oddsData && oddsData.events.length) {
     user =
       `Voici de VRAIS matchs et cotes (décimal) récupérés via une API de cotes pour "${oddsData.competition}" :\n` +
       JSON.stringify(oddsData.events) + `\n\n` +
-      `Choisis EXACTEMENT 2 paris parmi ces matchs. Utilise la recherche web pour vérifier forme, absences et contexte. ` +
-      `Dans "odds", reprends la cote réelle correspondant au marché que tu recommandes (ou la plus proche). ` +
-      `Exploite tout l'éventail des marchés pour viser une confiance honnêtement élevée (double chance, Over/Under, etc.) sans la gonfler. ` +
+      windowRule + ` ` +
+      `Propose 0 à 2 paris (uniquement ceux atteignant honnêtement ${MINCONF}% de confiance) parmi ces matchs. Vérifie forme, absences et contexte via la recherche web. ` +
+      `Dans "odds", reprends la cote réelle du marché recommandé et mets "oddsReal":true. ` +
       learning +
       `\nRéponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
   } else {
     user =
-      `Recherche sur le web les matchs réels programmés cette semaine (à partir du ${TODAY}) liés à "${comp}". ` +
-      `OBJECTIF NON NÉGOCIABLE : renvoyer EXACTEMENT 2 paris solides. Il y a toujours beaucoup de matchs et d'options. ` +
-      `Si "${comp}" a peu ou pas de matchs, ÉLARGIS : divisions inférieures (Ligue 1 → Ligue 2, National), coupes, ligues voisines, ` +
-      `ou matchs internationaux en cours — jusqu'à trouver 2 paris fiables. ` +
-      `Exploite tout l'éventail des marchés pour une confiance honnêtement haute (double chance 1X/X2, Over/Under, BTTS, handicap, sets…) sans la gonfler. ` +
+      `Recherche sur le web les matchs réels de "${comp}" programmés dans les 7 prochains jours (à partir du ${TODAY}). ` +
+      windowRule + ` ` +
+      `Propose 0 à 2 paris, UNIQUEMENT ceux atteignant honnêtement ${MINCONF}% de confiance. Si "${comp}" n'offre rien de fiable, tu peux élargir aux divisions inférieures/coupes/ligues voisines — mais NE REMPLIS PAS pour faire du volume : mieux vaut 0 pari qu'un pari faible. ` +
+      `Comme les cotes ne viennent pas d'une API ici, mets "oddsReal":false et donne une cote estimée réaliste. ` +
       learning +
       `\nIndique la compétition réelle de chaque pari. Réponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
   }
@@ -183,10 +185,11 @@ module.exports = async (req, res) => {
     const sport = (body && body.sport) || "Football";
     const comp = (body && body.comp) || "";
     const history = (body && body.history) || [];
+    const threshold = (body && body.threshold) || 80;
     if (!comp) { res.status(400).json({ error: "Compétition manquante" }); return; }
 
     const oddsData = await fetchRealOdds(comp, sport);
-    const parsed = await analyze(sport, comp, oddsData, history);
+    const parsed = await analyze(sport, comp, oddsData, history, threshold);
 
     res.status(200).json({
       picks: parsed.picks || [],
