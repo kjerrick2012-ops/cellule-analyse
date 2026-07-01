@@ -138,6 +138,20 @@
   .perf .pe:last-child{border-bottom:none}
   .perf .rec{font-family:var(--mono)}
   .empty{margin-top:20px;padding:20px;border-radius:12px;text-align:center;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+  /* liste historique compacte + pop-up */
+  .hrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;background:var(--panel);border:1px solid var(--line);margin-bottom:8px;cursor:pointer}
+  .hrow:hover{border-color:var(--gold)}
+  .hrow .t{font-family:var(--display);letter-spacing:.5px;font-size:14px}
+  .hrow .d{color:var(--dim);font-size:11px;font-family:var(--mono)}
+  .hrow .tally{margin-left:auto;font-family:var(--mono);font-size:12px;display:flex;gap:8px}
+  .hrow .see{color:var(--gold);font-size:12px;font-weight:600;white-space:nowrap}
+  .overlay{position:fixed;inset:0;background:rgba(6,10,20,.75);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;z-index:50}
+  .modal-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:640px;width:100%;padding:16px}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .modal-head .mt{font-family:var(--display);letter-spacing:1px;font-size:18px}
+  .modal-x{background:var(--panel2);border:none;color:var(--text);border-radius:8px;padding:8px 10px;cursor:pointer}
+  .grade-list{margin-top:14px}
+  .grade-list h4{margin:0 0 8px;font-family:var(--display);letter-spacing:1px;font-size:14px;color:var(--muted)}
   footer{margin-top:30px;padding-top:18px;text-align:center;border-top:1px solid var(--line);color:var(--dim);font-size:12px;line-height:1.7}
   .hidden{display:none}
 </style>
@@ -152,6 +166,8 @@
     <div>
       <div class="stat"><span class="l">Experts actifs </span><span class="v" id="s-active">0/0</span></div>
       <div class="stat"><span class="l">Pronostics </span><span class="v mono" id="s-picks">0</span></div>
+      <div class="stat"><span class="l">Réussite </span><span class="v mono" id="s-win" style="color:var(--green)">—</span></div>
+      <div class="stat"><span class="l">Perte </span><span class="v mono" id="s-loss" style="color:var(--red)">—</span></div>
     </div>
   </header>
 
@@ -161,6 +177,7 @@
   </div>
 
   <div id="view"></div>
+  <div id="modal"></div>
 
   <footer>
     JeyBet — analyses à titre informatif, aucun gain garanti. Les paris comportent un risque financier réel ;
@@ -186,7 +203,7 @@ const SEED=[
 ];
 let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,...e});
 
-const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,validated:false,info:"",bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:""};
+const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,validated:false,info:"",bankroll:100,stake:20,winStartH:2,winEndD:7,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:"",modalRun:null};
 
 /* Catalogue de compétitions groupées (pré-liste d'ajout) */
 const CATALOG={
@@ -225,8 +242,10 @@ function gradedFor(comp,limit=10){
 /* ---------- appel back-end ---------- */
 async function runExpert(ex){
   const history=gradedFor(ex.comp,10);
+  let sH=state.winStartH||2, eH=(state.winEndD||7)*24;
+  if(sH>=eH) sH=Math.max(1,eH-1); // garde-fou : début avant fin
   const res=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history,threshold:THRESHOLD})});
+    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history,threshold:THRESHOLD,winStartHours:sH,winEndHours:eH})});
   if(!res.ok){let m="HTTP "+res.status;try{const e=await res.json();if(e&&e.error)m=e.error;}catch(_){}throw new Error(m);}
   const data=await res.json();
   const picks=(data.picks||[]).slice(0,2).map((p,i)=>({
@@ -296,6 +315,7 @@ function gradePick(runId,idx,status){
 }
 function deleteRun(runId){
   state.history=(state.history||[]).filter(r=>String(r.id)!==String(runId));
+  if(String(state.modalRun)===String(runId)) state.modalRun=null;
   render();
   fetch("/api/history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({del:{runId}})}).catch(()=>{});
 }
@@ -417,6 +437,16 @@ function renderAnalyse(){
       <div class="pill"><span>Seuil</span><b style="color:var(--teal)">${THRESHOLD}%</b><span style="color:var(--dim)">· cible</span><b style="color:var(--gold)">${TARGET}%</b></div>
       <button id="go" class="go" ${state.running||activeCount===0?"disabled":""}>${state.running?ICO.loader+" ANALYSE EN COURS…":ICO.search+" LANCER L'ANALYSE"}</button>
     </div>
+    <div class="control" style="margin-top:-8px">
+      <div style="flex:1;min-width:240px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px"><span>Match commence au plus tôt dans</span><b id="wlab-start" style="color:var(--gold);font-family:var(--mono)">${state.winStartH} h</b></div>
+        <input id="win-start" type="range" min="1" max="72" step="1" value="${state.winStartH}" style="width:100%;accent-color:var(--gold)">
+      </div>
+      <div style="flex:1;min-width:240px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px"><span>… et au plus tard dans</span><b id="wlab-end" style="color:var(--teal);font-family:var(--mono)">${state.winEndD} j</b></div>
+        <input id="win-end" type="range" min="1" max="7" step="1" value="${state.winEndD}" style="width:100%;accent-color:var(--teal)">
+      </div>
+    </div>
     <div style="display:flex;align-items:flex-start;gap:8px;margin:-6px 2px 0;color:var(--muted);font-size:12px;line-height:1.5">${ICO.warn}<span>Les pourcentages sont des <b style="color:var(--text)">estimations</b>, pas des garanties. Mise 2–5% de bankroll maximum. Ton vrai juge, c'est ton taux de réussite dans l'onglet Historique.</span></div>`;
   if(state.err) html+=`<div class="banner err">${ICO.warn} ${esc(state.err)}</div>`;
   if(state.info) html+=`<div class="banner info">✓ ${esc(state.info)}</div>`;
@@ -440,6 +470,55 @@ function renderAnalyse(){
 }
 
 /* ---------- rendu : HISTORIQUE ---------- */
+/* ---------- pop-up reçu (historique) ---------- */
+function runReceiptHTML(run){
+  const legs=run.picks||[];
+  const odds=legs.reduce((a,p)=>a*(Number(p.odds)||1),1);
+  const rows=legs.map(p=>`
+    <tr>
+      <td class="c">${esc(p.date||"—")}</td>
+      <td class="evt">${esc(p.sport)}. ${esc(p.comp)}. <b>${esc(p.match)}</b></td>
+      <td class="sel">${esc(p.market)}<small>${p.confidence}%</small></td>
+      <td class="c">${Number(p.odds).toFixed(2)}</td>
+    </tr>`).join("");
+  return `<div class="coupon" id="modal-coupon">
+    <div class="coupon-head"><div class="coupon-logo">JEY<b>BET</b></div><div class="coupon-date">${fmtDateTime(new Date(run.date))}</div></div>
+    <div class="coupon-num">Coupon № ${run.num}</div>
+    <div class="coupon-type">Type de pari : Combiné</div>
+    <table class="ct"><thead><tr><th>Date/Temps</th><th>Événement</th><th>Sélection</th><th>Cote</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="coupon-foot"><span>Cote totale : <b>${odds.toFixed(2)}</b></span></div>
+  </div>`;
+}
+function renderModal(){
+  const m=$("modal"); if(!m) return;
+  if(state.modalRun==null){ m.innerHTML=""; return; }
+  const run=(state.history||[]).find(r=>String(r.id)===String(state.modalRun));
+  if(!run){ m.innerHTML=""; return; }
+  const gl=run.picks.map((p,idx)=>`
+    <div class="hpick">
+      <div class="info"><div class="m">${esc(p.match)}</div><div class="s">${esc(p.market)} · @${Number(p.odds).toFixed(2)} · ${p.confidence}%</div></div>
+      <div class="statusbtns">
+        <button class="sbtn pend ${p.status==="pending"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="pending">⏳</button>
+        <button class="sbtn won ${p.status==="won"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="won">✅ Gagné</button>
+        <button class="sbtn lost ${p.status==="lost"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="lost">❌ Perdu</button>
+      </div>
+    </div>`).join("");
+  m.innerHTML=`<div class="overlay">
+    <div class="backdrop" data-act="close-modal" style="position:absolute;inset:0"></div>
+    <div class="modal-box" style="position:relative;z-index:1">
+      <div class="modal-head"><div class="mt">Reçu — Coupon № ${run.num}</div>
+        <div style="display:flex;gap:8px">
+          <button class="share" data-act="share" data-target="modal-coupon" data-num="${run.num}">${ICO.share} Image</button>
+          <button class="modal-x" data-act="close-modal">${ICO.x} Fermer</button>
+        </div></div>
+      ${runReceiptHTML(run)}
+      <div class="grade-list"><h4>Résultats — note chaque pari une fois le match joué</h4>${gl}
+        <div style="text-align:right;margin-top:12px"><button class="sbtn lost" data-act="del-run" data-run="${run.id}">Supprimer ce coupon</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderHistorique(){
   const errBanner = state.histError ? `<div class="banner err">${ICO.warn} ${esc(state.histError)}</div>` : "";
   const h=loadHistory().slice().reverse();
@@ -484,21 +563,11 @@ function renderHistorique(){
   const runs=h.map(run=>{
     const d=new Date(run.date);
     const w=run.picks.filter(p=>p.status==="won").length, l=run.picks.filter(p=>p.status==="lost").length, pe=run.picks.filter(p=>p.status==="pending").length;
-    const picks=run.picks.map((p,idx)=>`
-      <div class="hpick">
-        <div class="info"><div class="m">${esc(p.match)}</div><div class="s">${esc(p.sport)}. ${esc(p.comp)} · ${esc(p.market)} · @${p.odds.toFixed(2)} · ${p.confidence}%</div></div>
-        <div class="statusbtns">
-          <button class="sbtn pend ${p.status==="pending"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="pending">⏳</button>
-          <button class="sbtn won ${p.status==="won"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="won">✅ Gagné</button>
-          <button class="sbtn lost ${p.status==="lost"?"on":""}" data-act="grade" data-run="${run.id}" data-idx="${idx}" data-s="lost">❌ Perdu</button>
-        </div>
-      </div>`).join("");
-    return `<div class="hrun">
-      <div class="hrun-head">
-        <div><div class="t">Coupon № ${run.num}</div><div class="d">${fmtDateTime(d)}</div></div>
-        <div class="tally"><span style="color:var(--green)">${w}✅</span><span style="color:var(--red)">${l}❌</span><span style="color:var(--gold)">${pe}⏳</span>
-          <button class="ico" data-act="del-run" data-run="${run.id}" title="Supprimer" style="color:var(--dim);margin-left:6px">${ICO.x}</button></div>
-      </div>${picks}</div>`;
+    return `<div class="hrow" data-act="open-run" data-run="${run.id}">
+      <div><div class="t">Coupon № ${run.num}</div><div class="d">${fmtDateTime(d)} · ${run.picks.length} pari(s)</div></div>
+      <div class="tally"><span style="color:var(--green)">${w}✅</span><span style="color:var(--red)">${l}❌</span><span style="color:var(--gold)">${pe}⏳</span></div>
+      <span class="see">Voir le reçu →</span>
+    </div>`;
   }).join("");
 
   return errBanner+`<div class="sect"><div class="row"><span class="n">★</span><h2>Historique & suivi</h2></div>
@@ -510,9 +579,18 @@ function render(){
   // header stats
   $("s-active").textContent=state.experts.filter(e=>e.active).length+"/"+state.experts.length;
   $("s-picks").textContent=state.experts.flatMap(e=>e.picks).length;
+  // taux réussite / perte à partir des paris notés
+  let gw=0,gl=0;
+  loadHistory().forEach(r=>(r.picks||[]).forEach(p=>{ if(p.status==="won")gw++; else if(p.status==="lost")gl++; }));
+  const gtot=gw+gl;
+  if($("s-win")) $("s-win").textContent = gtot?Math.round(gw/gtot*100)+"%":"—";
+  if($("s-loss")) $("s-loss").textContent = gtot?Math.round(gl/gtot*100)+"%":"—";
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===state.tab));
   $("view").innerHTML = state.tab==="analyse"?renderAnalyse():renderHistorique();
+  renderModal();
   const bk=$("bankroll"); if(bk) bk.addEventListener("input",e=>{state.bankroll=Math.max(1,Number(e.target.value)||0);});
+  const ws=$("win-start"); if(ws) ws.addEventListener("input",e=>{state.winStartH=Number(e.target.value)||1;const l=$("wlab-start");if(l)l.textContent=state.winStartH+" h";});
+  const we=$("win-end"); if(we) we.addEventListener("input",e=>{state.winEndD=Number(e.target.value)||7;const l=$("wlab-end");if(l)l.textContent=state.winEndD+" j";});
   const stk=$("stake"); if(stk) stk.addEventListener("input",e=>{
     state.stake=Math.max(0,Number(e.target.value)||0);
     document.querySelectorAll(".cp-mise").forEach(el=>el.textContent=state.stake.toFixed(2)+" €");
@@ -545,6 +623,8 @@ document.addEventListener("click",e=>{
   else if(act==="pick"){/* handled on change */}
   else if(act==="grade"){gradePick(Number(el.dataset.run),Number(el.dataset.idx),el.dataset.s);}
   else if(act==="del-run"){deleteRun(Number(el.dataset.run));}
+  else if(act==="open-run"){state.modalRun=Number(el.dataset.run);render();}
+  else if(act==="close-modal"){state.modalRun=null;render();}
 });
 document.addEventListener("change",e=>{
   const el=e.target.closest("[data-act]"); if(!el) return;
