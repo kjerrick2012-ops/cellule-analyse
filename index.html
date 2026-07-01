@@ -1,6 +1,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>JeyBet</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   :root{
@@ -84,24 +85,28 @@
   /* ----- COUPON (style ticket bookmaker, fond blanc) ----- */
   .coupons{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
   .coupon-label{font-family:var(--display);letter-spacing:1px;font-size:13px;margin-bottom:6px}
-  .coupon{background:#fff;color:#111;border-radius:6px;padding:16px 14px;font-family:var(--body)}
+  .coupon{background:#fff;color:#0a0a0a;border-radius:6px;padding:16px 14px;font-family:var(--body)}
+  .coupon *{color:#0a0a0a}
   .coupon-head{display:flex;align-items:center;justify-content:space-between}
-  .coupon-logo{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:2px;color:#111}
+  .coupon-logo{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:2px}
   .coupon-logo b{color:#1aa84a}
   .coupon-date{font-size:12px;color:#333}
-  .coupon-num{text-align:center;font-weight:700;font-size:17px;margin:10px 0 2px}
+  .coupon-num{text-align:center;font-weight:700;font-size:18px;margin:10px 0 2px}
   .coupon-type{text-align:right;font-size:13px;font-weight:600;margin-bottom:6px}
-  table.ct{width:100%;border-collapse:collapse;font-size:12px}
-  table.ct th,table.ct td{border:1px solid #222;padding:6px 7px;vertical-align:middle;text-align:left}
-  table.ct th{font-weight:700;background:#f3f3f3;text-align:center}
-  table.ct td.c{text-align:center;white-space:nowrap}
-  table.ct .evt{font-size:12px;line-height:1.35}
-  table.ct .sel{text-align:center;font-size:12px}
-  table.ct .sel small{display:block;color:#1aa84a;font-weight:700;margin-top:2px}
-  .coupon-foot{display:flex;flex-wrap:wrap;gap:14px;justify-content:flex-end;margin-top:10px;font-size:13px}
-  .coupon-foot b{font-family:var(--mono)}
-  .coupon-foot .tot{color:#111;font-weight:700}
-  .coupon-empty{padding:20px;text-align:center;color:#666;font-size:13px}
+  table.ct{width:100%;border-collapse:collapse;font-size:13px}
+  table.ct th,table.ct td{border:1px solid #000;padding:7px 8px;vertical-align:middle;text-align:left;color:#0a0a0a}
+  table.ct th{font-weight:700;background:#eee;text-align:center;font-size:12px}
+  table.ct td.c{text-align:center;white-space:nowrap;font-weight:600}
+  table.ct .evt{font-size:12.5px;line-height:1.4}
+  table.ct .evt b{font-weight:700}
+  table.ct .sel{text-align:center;font-size:12.5px;font-weight:600}
+  table.ct .sel small{display:block;color:#1aa84a;font-weight:700;margin-top:3px;font-size:12px}
+  .coupon-foot{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:13px}
+  .coupon-foot b{font-family:var(--mono);font-weight:700}
+  .coupon-foot .stake{width:78px;padding:4px 6px;border:1px solid #000;border-radius:5px;font-family:var(--mono);font-size:13px;text-align:right;color:#0a0a0a;background:#fff}
+  .coupon-empty{padding:20px;text-align:center;color:#555;font-size:13px}
+  .coupon-actions{margin-top:8px;text-align:right}
+  .share{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:none;background:#1aa84a;color:#fff;font-weight:600;font-size:13px;cursor:pointer}
 
   .reality{margin-top:14px;padding:14px;border-radius:12px;background:var(--panel2);border:1px solid var(--gold)}
   .reality .rh{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--gold);font-family:var(--display);font-weight:600;letter-spacing:1px}
@@ -177,7 +182,19 @@ const SEED=[
 ];
 let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,...e});
 
-const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,bankroll:100,err:"",addOpen:false,draft:{sport:"Football",comp:""},couponNum:null};
+const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{}};
+
+/* Catalogue de compétitions groupées (pré-liste d'ajout) */
+const CATALOG={
+  "Football — International":[["Football","Coupe du Monde 2026"],["Football","Éliminatoires Coupe du Monde"],["Football","Matchs amicaux internationaux"]],
+  "Football — Europe (clubs)":[["Football","Ligue des Champions"],["Football","Ligue Europa"],["Football","Conference League"],["Football","Premier League (Angleterre)"],["Football","Championship (Angleterre)"],["Football","Ligue 1 (France)"],["Football","Ligue 2 (France)"],["Football","La Liga (Espagne)"],["Football","Serie A (Italie)"],["Football","Bundesliga (Allemagne)"],["Football","Eredivisie (Pays-Bas)"],["Football","Liga Portugal"],["Football","Süper Lig (Turquie)"],["Football","Pro League (Belgique)"]],
+  "Football — Amérique":[["Football","MLS (États-Unis)"],["Football","Brésil — Brasileirão Série A"],["Football","Mexique — Liga MX"],["Football","Argentine — Liga Profesional"],["Football","Copa Libertadores"]],
+  "Football — Afrique & autres":[["Football","CAF Champions League"],["Football","Championnats nationaux africains"],["Football","Sélections africaines"]],
+  "Tennis":[["Tennis","ATP — tournois en cours"],["Tennis","WTA — tournois en cours"],["Tennis","Grand Chelem en cours"]],
+  "Basketball":[["Basketball","NBA"],["Basketball","EuroLeague"],["Basketball","WNBA"]],
+  "Autres sports":[["Baseball","MLB (baseball)"],["Hockey","NHL (hockey)"],["Rugby","Top 14 (rugby)"]],
+};
+const SPORT_FLAG={Football:"⚽",Tennis:"🎾",Basketball:"🏀",Baseball:"⚾",Hockey:"🏒",Rugby:"🏉",Autre:"🎯"};
 
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const $=id=>document.getElementById(id);
@@ -265,8 +282,8 @@ function buildCoupon(legs){
   return {legs,odds,prob};
 }
 function couponHTML(opt,t,num,dateStr){
-  const stake=state.bankroll*opt.pct/100;
-  const rows=t.legs.length?t.legs.map((p,i)=>`
+  const stake=state.stake||0;
+  const rows=t.legs.length?t.legs.map((p)=>`
     <tr>
       <td class="c">${esc(p.date||"à confirmer")}</td>
       <td class="evt">${esc(p.sport)}. ${esc(p.comp)}. <b>${esc(p.match)}</b></td>
@@ -276,20 +293,22 @@ function couponHTML(opt,t,num,dateStr){
   const body=t.legs.length
     ? `<table class="ct"><thead><tr><th>Date/Temps</th><th>Événement</th><th>Sélection</th><th>Cote</th></tr></thead><tbody>${rows}</tbody></table>
        <div class="coupon-foot">
-         <span>Cote totale : <b class="tot">${t.odds.toFixed(2)}</b></span>
+         <span>Cote totale : <b>${t.odds.toFixed(2)}</b></span>
          <span>Proba réelle : <b>${(t.prob*100).toFixed(t.prob<.1?1:0)}%</b></span>
-         <span>Mise : <b>${stake.toFixed(2)} €</b></span>
-         <span>Gain potentiel : <b class="tot">${(stake*t.odds).toFixed(2)} €</b></span>
+         <span>Mise : <b class="cp-mise">${stake.toFixed(2)} €</b></span>
+         <span>Gain potentiel : <b class="cp-gain" data-odds="${t.odds.toFixed(4)}">${(stake*t.odds).toFixed(2)} €</b></span>
        </div>`
     : `<div class="coupon-empty">Aucune sélection retenue pour ce coupon.</div>`;
+  const actions=t.legs.length?`<div class="coupon-actions"><button class="share" data-act="share" data-target="coupon-${opt.kind}" data-num="${num}">${ICO.share} Enregistrer / partager l'image</button></div>`:"";
   return `<div>
     <div class="coupon-label" style="color:${opt.accent}">${opt.label}</div>
-    <div class="coupon">
+    <div class="coupon" id="coupon-${opt.kind}">
       <div class="coupon-head"><div class="coupon-logo">JEY<b>BET</b></div><div class="coupon-date">${dateStr}</div></div>
       <div class="coupon-num">Coupon № ${num}</div>
       <div class="coupon-type">Type de pari : Combiné</div>
       ${body}
     </div>
+    ${actions}
   </div>`;
 }
 
@@ -328,10 +347,22 @@ function expertHTML(e){
 }
 function addCardHTML(){
   if(!state.addOpen) return `<div class="card add"><button class="addbtn" data-act="open-add">${ICO.plus}<span style="font-size:13px">Ajouter un expert / une compétition</span></button></div>`;
-  const opts=["Football","Basketball","Tennis","Rugby","Hockey","Baseball","Autre"].map(s=>`<option ${s===state.draft.sport?"selected":""}>${s}</option>`).join("");
+  let opts=`<option value="">— Choisir une compétition —</option>`;
+  Object.keys(CATALOG).forEach(cat=>{
+    opts+=`<optgroup label="${cat}">`;
+    CATALOG[cat].forEach(([sp,cp])=>{opts+=`<option value="${esc(sp)}|${esc(cp)}" ${state.draft.sel===sp+"|"+cp?"selected":""}>${esc(cp)}</option>`;});
+    opts+=`</optgroup>`;
+  });
+  opts+=`<optgroup label="Autre"><option value="__free__" ${state.draft.mode==="free"?"selected":""}>Autre — saisie libre…</option></optgroup>`;
+  let freeBlock="";
+  if(state.draft.mode==="free"){
+    const sportOpts=["Football","Basketball","Tennis","Rugby","Hockey","Baseball","Autre"].map(s=>`<option ${s===state.draft.sport?"selected":""}>${s}</option>`).join("");
+    freeBlock=`<select data-act="draft-sport">${sportOpts}</select>
+      <input data-act="draft-comp" placeholder="Nom de la compétition" value="${esc(state.draft.comp)}"/>`;
+  }
   return `<div class="card add"><div class="addform">
-    <select data-act="draft-sport">${opts}</select>
-    <input data-act="draft-comp" placeholder="Compétition (ex : Premier League)" value="${esc(state.draft.comp)}"/>
+    <select data-act="catalog-select">${opts}</select>
+    ${freeBlock}
     <div class="btns"><button class="ok" data-act="add-ok">Ajouter</button><button class="cancel" data-act="add-cancel">Annuler</button></div>
   </div></div>`;
 }
@@ -353,6 +384,8 @@ function renderAnalyse(){
     <div class="control">
       <div style="display:flex;align-items:center;gap:12px"><label class="lab">Bankroll</label>
         <div class="num"><input id="bankroll" type="number" min="1" value="${state.bankroll}"/><span>€</span></div></div>
+      <div style="display:flex;align-items:center;gap:12px"><label class="lab">Mise</label>
+        <div class="num"><input id="stake" type="number" min="0" step="0.5" value="${state.stake}"/><span>€</span></div></div>
       <div class="pill"><span>Seuil</span><b style="color:var(--teal)">${THRESHOLD}%</b><span style="color:var(--dim)">· cible</span><b style="color:var(--gold)">${TARGET}%</b></div>
       <button id="go" class="go" ${state.running||activeCount===0?"disabled":""}>${state.running?ICO.loader+" ANALYSE EN COURS…":ICO.search+" LANCER L'ANALYSE"}</button>
     </div>`;
@@ -366,8 +399,8 @@ function renderAnalyse(){
     html+=`<div class="sect"><div class="row"><span class="n">02</span><h2>Coupons</h2></div>
       <p class="hint">${state.running?"⏳ Remplissage en direct — ":""}${inc.length} sélection(s). Décoche un pari dans sa station pour l'exclure.</p></div>
       <div class="coupons">
-        ${couponHTML({label:"COMBINÉ RENDEMENT — jusqu'à 20 legs",pct:1,accent:"var(--gold)"},t1,num,dateStr)}
-        ${couponHTML({label:"COMBINÉ SÉCURISÉ — 3 meilleures confiances",pct:2,accent:"var(--teal)"},t2,num,dateStr)}
+        ${couponHTML({kind:"rendement",label:"COMBINÉ RENDEMENT — jusqu'à 20 legs",pct:1,accent:"var(--gold)"},t1,num,dateStr)}
+        ${couponHTML({kind:"securite",label:"COMBINÉ SÉCURISÉ — 3 meilleures confiances",pct:2,accent:"var(--teal)"},t2,num,dateStr)}
       </div>${realityHTML(t1)}`;
   } else if(state.done){
     html+=`<div class="empty">Aucune sélection n'a franchi le seuil de ${THRESHOLD}%. Résultat honnête : forcer un combiné sous le seuil dégrade le rendement.</div>`;
@@ -427,6 +460,11 @@ function render(){
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===state.tab));
   $("view").innerHTML = state.tab==="analyse"?renderAnalyse():renderHistorique();
   const bk=$("bankroll"); if(bk) bk.addEventListener("input",e=>{state.bankroll=Math.max(1,Number(e.target.value)||0);});
+  const stk=$("stake"); if(stk) stk.addEventListener("input",e=>{
+    state.stake=Math.max(0,Number(e.target.value)||0);
+    document.querySelectorAll(".cp-mise").forEach(el=>el.textContent=state.stake.toFixed(2)+" €");
+    document.querySelectorAll(".cp-gain").forEach(el=>el.textContent=(state.stake*(Number(el.dataset.odds)||0)).toFixed(2)+" €");
+  });
   const go=$("go"); if(go) go.addEventListener("click",launch);
 }
 
@@ -439,8 +477,17 @@ document.addEventListener("click",e=>{
   else if(act==="remove"){state.experts=state.experts.filter(s=>s.id!==id);render();}
   else if(act==="rerun"){rerun(id);}
   else if(act==="open-add"){state.addOpen=true;render();}
-  else if(act==="add-cancel"){state.addOpen=false;render();}
-  else if(act==="add-ok"){if(state.draft.comp.trim()){state.experts.push(mkExpert({sport:state.draft.sport,comp:state.draft.comp,flag:"🎯"}));state.draft={sport:"Football",comp:""};state.addOpen=false;render();}}
+  else if(act==="add-cancel"){state.addOpen=false;state.draft={mode:"catalog",sel:"",sport:"Football",comp:""};render();}
+  else if(act==="add-ok"){
+    if(state.draft.mode==="free"){
+      if(state.draft.comp.trim()){state.experts.push(mkExpert({sport:state.draft.sport,comp:state.draft.comp.trim(),flag:SPORT_FLAG[state.draft.sport]||"🎯"}));}
+    } else if(state.draft.sel){
+      const [sp,cp]=state.draft.sel.split("|");
+      state.experts.push(mkExpert({sport:sp,comp:cp,flag:SPORT_FLAG[sp]||"🎯"}));
+    }
+    state.addOpen=false;state.draft={mode:"catalog",sel:"",sport:"Football",comp:""};render();
+  }
+  else if(act==="share"){shareCoupon(el.dataset.target,el.dataset.num,el);}
   else if(act==="pick"){/* handled on change */}
   else if(act==="grade"){gradePick(Number(el.dataset.run),Number(el.dataset.idx),el.dataset.s);}
   else if(act==="del-run"){deleteRun(Number(el.dataset.run));}
@@ -449,10 +496,32 @@ document.addEventListener("change",e=>{
   const el=e.target.closest("[data-act]"); if(!el) return;
   if(el.dataset.act==="pick"){togglePick(el.dataset.e,el.dataset.k);}
   else if(el.dataset.act==="draft-sport"){state.draft.sport=el.value;}
+  else if(el.dataset.act==="catalog-select"){
+    if(el.value==="__free__"){state.draft.mode="free";state.draft.sel="";render();}
+    else{state.draft.mode="catalog";state.draft.sel=el.value;}
+  }
 });
 document.addEventListener("input",e=>{
-  const el=e.target.closest("[data-act]"); if(el&&el.dataset.act==="draft-comp"){state.draft.comp=el.value;}
+  const el=e.target.closest("[data-act]");
+  if(el&&el.dataset.act==="draft-comp"){state.draft.comp=el.value;}
 });
+
+/* ---------- partage : reçu en image ---------- */
+async function shareCoupon(targetId,num,btn){
+  const el=document.getElementById(targetId); if(!el||typeof html2canvas==="undefined") return;
+  const old=btn?btn.innerHTML:""; if(btn){btn.innerHTML=ICO.loader+" Génération…";btn.disabled=true;}
+  try{
+    const canvas=await html2canvas(el,{backgroundColor:"#ffffff",scale:2});
+    await new Promise(res=>canvas.toBlob(async(blob)=>{
+      const file=new File([blob],`jeybet-${num}.png`,{type:"image/png"});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{await navigator.share({files:[file],title:"JeyBet",text:`Coupon JeyBet № ${num}`});res();return;}catch(_){}
+      }
+      const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`jeybet-${num}.png`;a.click();URL.revokeObjectURL(url);res();
+    },"image/png"));
+  }catch(_){}
+  if(btn){btn.innerHTML=old;btn.disabled=false;}
+}
 
 /* ---------- icônes ---------- */
 const I=(p,extra="")=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${p}</svg>`;
@@ -464,6 +533,7 @@ const ICO={
   power:I('<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>','width="15" height="15"'),
   refresh:I('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>','width="14" height="14"'),
   warn:I('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>'),
+  share:I('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>','width="15" height="15"'),
 };
 render();
 </script>
