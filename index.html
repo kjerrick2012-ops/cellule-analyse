@@ -83,30 +83,34 @@
   .addform .cancel{padding:8px 12px;border-radius:8px;background:var(--panel2);color:var(--muted);border:none;cursor:pointer}
 
   /* ----- COUPON (style ticket bookmaker, fond blanc) ----- */
-  .coupons{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+  .coupons{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))}
   .coupon-label{font-family:var(--display);letter-spacing:1px;font-size:13px;margin-bottom:6px}
-  .coupon{background:#fff;color:#0a0a0a;border-radius:6px;padding:16px 14px;font-family:var(--body)}
+  .coupon{background:#fff;color:#0a0a0a;border-radius:6px;padding:14px 12px;font-family:var(--body);width:100%;overflow:hidden}
   .coupon *{color:#0a0a0a}
-  .coupon-head{display:flex;align-items:center;justify-content:space-between}
-  .coupon-logo{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:2px}
+  .coupon-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .coupon-logo{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:1px}
   .coupon-logo b{color:#1aa84a}
-  .coupon-date{font-size:12px;color:#333}
-  .coupon-num{text-align:center;font-weight:700;font-size:18px;margin:10px 0 2px}
-  .coupon-type{text-align:right;font-size:13px;font-weight:600;margin-bottom:6px}
-  table.ct{width:100%;border-collapse:collapse;font-size:13px}
-  table.ct th,table.ct td{border:1px solid #000;padding:7px 8px;vertical-align:middle;text-align:left;color:#0a0a0a}
-  table.ct th{font-weight:700;background:#eee;text-align:center;font-size:12px}
-  table.ct td.c{text-align:center;white-space:nowrap;font-weight:600}
-  table.ct .evt{font-size:12.5px;line-height:1.4}
+  .coupon-date{font-size:11px;color:#333;white-space:nowrap}
+  .coupon-num{text-align:center;font-weight:700;font-size:16px;margin:10px 0 2px}
+  .coupon-type{text-align:right;font-size:12px;font-weight:600;margin-bottom:6px}
+  table.ct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+  table.ct th,table.ct td{border:1px solid #000;padding:5px 5px;vertical-align:middle;text-align:left;color:#0a0a0a;word-break:break-word;overflow-wrap:anywhere}
+  table.ct th{font-weight:700;background:#eee;text-align:center;font-size:10.5px}
+  table.ct th:nth-child(1),table.ct td:nth-child(1){width:31%}
+  table.ct th:nth-child(2),table.ct td:nth-child(2){width:34%}
+  table.ct th:nth-child(3),table.ct td:nth-child(3){width:23%}
+  table.ct th:nth-child(4),table.ct td:nth-child(4){width:12%}
+  table.ct td.c{text-align:center;font-weight:600}
+  table.ct .evt{line-height:1.35}
   table.ct .evt b{font-weight:700}
-  table.ct .sel{text-align:center;font-size:12.5px;font-weight:600}
-  table.ct .sel small{display:block;color:#1aa84a;font-weight:700;margin-top:3px;font-size:12px}
-  .coupon-foot{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;justify-content:flex-end;margin-top:12px;font-size:13px}
+  table.ct .sel{text-align:center;font-weight:600}
+  table.ct .sel small{display:block;color:#1aa84a;font-weight:700;margin-top:3px;font-size:11px}
+  .coupon-foot{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;margin-top:12px;font-size:12.5px;text-align:center}
   .coupon-foot b{font-family:var(--mono);font-weight:700}
-  .coupon-foot .stake{width:78px;padding:4px 6px;border:1px solid #000;border-radius:5px;font-family:var(--mono);font-size:13px;text-align:right;color:#0a0a0a;background:#fff}
   .coupon-empty{padding:20px;text-align:center;color:#555;font-size:13px}
-  .coupon-actions{margin-top:8px;text-align:right}
-  .share{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:none;background:#1aa84a;color:#fff;font-weight:600;font-size:13px;cursor:pointer}
+  .coupon-actions{margin-top:8px;text-align:center}
+  .share{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:8px;border:none;background:#1aa84a;color:#fff;font-weight:600;font-size:13px;cursor:pointer}
+  .share *{color:#fff}
 
   .reality{margin-top:14px;padding:14px;border-radius:12px;background:var(--panel2);border:1px solid var(--gold)}
   .reality .rh{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--gold);font-family:var(--display);font-weight:600;letter-spacing:1px}
@@ -182,7 +186,7 @@ const SEED=[
 ];
 let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,...e});
 
-const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:""};
+const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,validated:false,info:"",bankroll:100,stake:20,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:""};
 
 /* Catalogue de compétitions groupées (pré-liste d'ajout) */
 const CATALOG={
@@ -239,19 +243,31 @@ async function runPool(items,worker,conc=2){const q=[...items];await Promise.all
 
 /* ---------- actions ---------- */
 async function launch(){
-  state.err=""; state.done=false; state.running=true; state.couponNum=genCoupon();
+  const active=state.experts.filter(e=>e.active);
+  if(active.length===0){ state.err="Sélectionne (ou ajoute) au moins un expert avant de lancer l'analyse."; render(); return; }
+  state.err=""; state.info=""; state.done=false; state.validated=false; state.running=true; state.couponNum=genCoupon();
   state.experts.forEach(e=>{if(e.active){e.status="run";e.picks=[];e.note="";e.adjusted=0;}});
   render();
   let anyError=false;
-  await runPool(state.experts.filter(e=>e.active),async e=>{
+  await runPool(active,async e=>{
     try{const r=await runExpert(e);e.status="done";e.picks=r.picks;e.note=r.note;e.oddsSource=r.oddsSource;e.adjusted=r.adjusted;}
     catch(ex){anyError=true;e.status="error";e.note=ex.message||"Échec";e.picks=[];}
     render();
   });
   if(anyError) state.err="Certains experts n'ont pas pu terminer — relancez-les ou réessayez.";
-  state.running=false; state.done=true;
-  await saveRun();
+  state.running=false; state.done=true; state.validated=false;
   render();
+}
+/* validation manuelle : enregistre le coupon dans l'historique puis réinitialise */
+async function validateAndReset(){
+  const inc=includedPicks();
+  if(!inc.length){ state.err="Aucune sélection à enregistrer."; render(); return; }
+  await saveRun();                              // sauvegarde en ligne
+  state.experts.forEach(e=>{e.status="idle";e.picks=[];e.note="";e.adjusted=0;}); // remise à zéro
+  state.done=false; state.validated=true; state.couponNum=null; state.err="";
+  state.info="Coupon enregistré ✓ dans l'historique. Prêt pour une nouvelle analyse.";
+  render();
+  fetchHistory().then(render);
 }
 async function rerun(id){
   const e=state.experts.find(x=>x.id===id); if(!e) return;
@@ -399,6 +415,7 @@ function renderAnalyse(){
       <button id="go" class="go" ${state.running||activeCount===0?"disabled":""}>${state.running?ICO.loader+" ANALYSE EN COURS…":ICO.search+" LANCER L'ANALYSE"}</button>
     </div>`;
   if(state.err) html+=`<div class="banner err">${ICO.warn} ${esc(state.err)}</div>`;
+  if(state.info) html+=`<div class="banner info">✓ ${esc(state.info)}</div>`;
   if(totalGraded>0) html+=`<div class="banner info">📊 Les experts tiennent compte de <b style="color:var(--text)">${totalGraded}</b> résultat(s) passé(s) pour ajuster leurs analyses.</div>`;
 
   html+=`<div class="sect"><div class="row"><span class="n">01</span><h2>Stations experts</h2></div><p class="hint">Chaque expert propose 2 paris et apprend de ses résultats passés.</p></div>
@@ -410,7 +427,8 @@ function renderAnalyse(){
       <div class="coupons">
         ${couponHTML({kind:"rendement",label:"COMBINÉ RENDEMENT — jusqu'à 20 legs",pct:1,accent:"var(--gold)"},t1,num,dateStr)}
         ${couponHTML({kind:"securite",label:"COMBINÉ SÉCURISÉ — 3 meilleures confiances",pct:2,accent:"var(--teal)"},t2,num,dateStr)}
-      </div>${realityHTML(t1)}`;
+      </div>${realityHTML(t1)}
+      ${(state.done&&!state.running)?`<div style="margin-top:16px;text-align:center"><button class="go" data-act="validate" style="margin:0;background:var(--green);color:#062317">${ICO.check} VALIDER ET ENREGISTRER DANS L'HISTORIQUE</button><div style="color:var(--dim);font-size:12px;margin-top:6px">Le coupon n'est ajouté à l'historique qu'après validation. Le tableau se réinitialisera ensuite.</div></div>`:""}`;
   } else if(state.done){
     html+=`<div class="empty">Aucune sélection n'a franchi le seuil de ${THRESHOLD}%. Résultat honnête : forcer un combiné sous le seuil dégrade le rendement.</div>`;
   }
@@ -498,6 +516,7 @@ document.addEventListener("click",e=>{
     state.addOpen=false;state.draft={mode:"catalog",sel:"",sport:"Football",comp:""};render();
   }
   else if(act==="share"){shareCoupon(el.dataset.target,el.dataset.num,el);}
+  else if(act==="validate"){validateAndReset();}
   else if(act==="pick"){/* handled on change */}
   else if(act==="grade"){gradePick(Number(el.dataset.run),Number(el.dataset.idx),el.dataset.s);}
   else if(act==="del-run"){deleteRun(Number(el.dataset.run));}
@@ -521,7 +540,11 @@ async function shareCoupon(targetId,num,btn){
   const el=document.getElementById(targetId); if(!el||typeof html2canvas==="undefined") return;
   const old=btn?btn.innerHTML:""; if(btn){btn.innerHTML=ICO.loader+" Génération…";btn.disabled=true;}
   try{
-    const canvas=await html2canvas(el,{backgroundColor:"#ffffff",scale:2});
+    const canvas=await html2canvas(el,{
+      backgroundColor:"#ffffff", scale:2, useCORS:true,
+      width:el.offsetWidth, height:el.offsetHeight,
+      windowWidth:el.scrollWidth, scrollX:0, scrollY:-window.scrollY
+    });
     await new Promise(res=>canvas.toBlob(async(blob)=>{
       const file=new File([blob],`jeybet-${num}.png`,{type:"image/png"});
       if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -544,6 +567,7 @@ const ICO={
   refresh:I('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>','width="14" height="14"'),
   warn:I('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>'),
   share:I('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>','width="15" height="15"'),
+  check:I('<path d="M20 6 9 17l-5-5"/>','width="16" height="16"'),
 };
 render();
 fetchHistory().then(render);
