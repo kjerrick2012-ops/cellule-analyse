@@ -187,7 +187,7 @@
 </div>
 
 <script>
-const THRESHOLD=80, TARGET=90, HKEY="jeybet_history_v1";
+const TARGET=90, HKEY="jeybet_history_v1";
 const now=new Date();
 document.getElementById("hdr-date").textContent=now.toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
 
@@ -201,9 +201,10 @@ const SEED=[
   {sport:"Baseball",comp:"MLB",flag:"⚾"},
   {sport:"Basketball",comp:"NBA / ligues d'été",flag:"🏀"},
 ];
-let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,...e});
+let _id=0; const mkExpert=e=>({id:"e"+(_id++),active:true,status:"idle",picks:[],note:"",comp:"",adjusted:0,mp:0,...e});
 
-const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,validated:false,info:"",bankroll:100,stake:20,winStartH:2,winEndD:7,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:"",modalRun:null};
+const state={tab:"analyse",experts:SEED.map(mkExpert),running:false,done:false,validated:false,info:"",bankroll:100,stake:20,winStartH:2,winEndD:7,threshold:80,maxPicks:2,err:"",addOpen:false,draft:{mode:"catalog",sel:"",sport:"Football",comp:""},couponNum:null,stakes:{},history:[],histError:"",modalRun:null};
+function TH(){return state.threshold||80;}
 
 /* Catalogue de compétitions groupées (pré-liste d'ajout) */
 const CATALOG={
@@ -268,17 +269,18 @@ async function runExpert(ex){
   const history=gradedFor(ex.comp,10);
   let sH=state.winStartH||2, eH=(state.winEndD||7)*24;
   if(sH>=eH) sH=Math.max(1,eH-1); // garde-fou : début avant fin
+  const mpv=(ex.mp&&ex.mp>0)?ex.mp:(state.maxPicks||2);
   const res=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history,threshold:THRESHOLD,winStartHours:sH,winEndHours:eH})});
+    body:JSON.stringify({sport:ex.sport,comp:ex.comp,history,threshold:TH(),winStartHours:sH,winEndHours:eH,maxPicks:mpv})});
   if(!res.ok){let m="HTTP "+res.status;try{const e=await res.json();if(e&&e.error)m=e.error;}catch(_){}throw new Error(m);}
   const data=await res.json();
-  const picks=(data.picks||[]).slice(0,2).map((p,i)=>({
+  const picks=(data.picks||[]).slice(0,mpv).map((p,i)=>({
     key:ex.id+"-"+i+"-"+Date.now(),
     match:p.match||"—", comp:p.competition||ex.comp, sport:ex.sport, date:p.date||"", market:p.market||"—",
     confidence:Math.max(0,Math.min(100,Math.round(Number(p.confidence)||0))),
     odds:Number(p.odds)>1?Number(p.odds):1.5, oddsReal:!!p.oddsReal,
     rationale:p.rationale||"", risk:p.risk||"",
-    include:(Number(p.confidence)||0)>=THRESHOLD
+    include:(Number(p.confidence)||0)>=TH()
   }));
   return {note:data.note||"",picks,oddsSource:data.oddsSource||"estimée",adjusted:history.length};
 }
@@ -395,7 +397,7 @@ function statusDot(s){
   return `<span class="dot" style="color:${m[0]}"><i style="background:${m[0]};${s==="run"?"animation:pulse 1s infinite":""}"></i>${m[1]}</span>`;
 }
 function pickHTML(e,p){
-  const col=p.confidence>=TARGET?"var(--teal)":p.confidence>=THRESHOLD?"var(--gold)":"var(--red)";
+  const col=p.confidence>=TARGET?"var(--teal)":p.confidence>=TH()?"var(--gold)":"var(--red)";
   const adj=adjustedConf(p.comp,p.market);
   let adjLine;
   if(adj.ok){
@@ -427,7 +429,12 @@ function expertHTML(e){
         <button class="ico" data-act="toggle" data-e="${e.id}" title="${e.active?"Désactiver":"Activer"}" style="color:${e.active?"var(--teal)":"var(--dim)"}">${ICO.power}</button>
         <button class="ico" data-act="remove" data-e="${e.id}" title="Retirer" style="color:var(--dim)">${ICO.x}</button></div>
     </div>
-    <div>${statusDot(e.status)}${src}${adj}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${statusDot(e.status)}${src}${adj}
+      <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)">Paris max
+        <select data-act="set-mp" data-e="${e.id}" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11px">
+          <option value="0" ${!e.mp?"selected":""}>Défaut (${state.maxPicks})</option>
+          ${[1,2,3,4,5].map(n=>`<option value="${n}" ${e.mp===n?"selected":""}>${n}</option>`).join("")}
+        </select></label></div>
     ${(e.note&&e.picks.length===0)?`<div class="note">${esc(e.note)}</div>`:""}
     ${e.picks.length?`<div style="margin-top:8px">${e.picks.map(p=>pickHTML(e,p)).join("")}</div>`:""}
   </div>`;
@@ -473,10 +480,20 @@ function renderAnalyse(){
         <div class="num"><input id="bankroll" type="number" min="1" value="${state.bankroll}"/><span>€</span></div></div>
       <div style="display:flex;align-items:center;gap:12px"><label class="lab">Mise</label>
         <div class="num"><input id="stake" type="number" min="0" step="0.5" value="${state.stake}"/><span>€</span></div></div>
-      <div class="pill"><span>Seuil</span><b style="color:var(--teal)">${THRESHOLD}%</b><span style="color:var(--dim)">· cible</span><b style="color:var(--gold)">${TARGET}%</b></div>
+      <div class="pill"><span>Seuil</span><b id="thlab" style="color:var(--teal)">${TH()}%</b><span style="color:var(--dim)">· max</span><b id="mplab" style="color:var(--gold)">${state.maxPicks} pari(s)/expert</b></div>
       <button id="go" class="go" ${state.running||activeCount===0?"disabled":""}>${state.running?ICO.loader+" ANALYSE EN COURS…":ICO.search+" LANCER L'ANALYSE"}</button>
     </div>
     <div class="control" style="margin-top:-8px">
+      <div style="flex:1;min-width:220px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px"><span>Seuil de confiance minimum</span><b id="thlab2" style="color:var(--teal);font-family:var(--mono)">${TH()}%</b></div>
+        <input id="th-slider" type="range" min="70" max="88" step="1" value="${TH()}" style="width:100%;accent-color:var(--teal)">
+        <div style="font-size:10.5px;color:var(--dim);margin-top:2px">Plafond honnête : 88% — au-delà, le chiffre serait inventé et les cotes (~1.02) sans intérêt.</div>
+      </div>
+      <div style="flex:1;min-width:220px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px"><span>Paris max par expert (défaut)</span><b id="mplab2" style="color:var(--gold);font-family:var(--mono)">${state.maxPicks}</b></div>
+        <input id="mp-slider" type="range" min="1" max="5" step="1" value="${state.maxPicks}" style="width:100%;accent-color:var(--gold)">
+        <div style="font-size:10.5px;color:var(--dim);margin-top:2px">Valeur par défaut — chaque station peut la personnaliser sur sa carte. L'expert s'abstient quand rien n'atteint le seuil.</div>
+      </div>
       <div style="flex:1;min-width:240px">
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px"><span>Match commence au plus tôt dans</span><b id="wlab-start" style="color:var(--gold);font-family:var(--mono)">${state.winStartH} h</b></div>
         <input id="win-start" type="range" min="1" max="72" step="1" value="${state.winStartH}" style="width:100%;accent-color:var(--gold)">
@@ -494,7 +511,7 @@ function renderAnalyse(){
   if(state.info) html+=`<div class="banner info">✓ ${esc(state.info)}</div>`;
   if(totalGraded>0) html+=`<div class="banner info">📊 Les experts tiennent compte de <b style="color:var(--text)">${totalGraded}</b> résultat(s) passé(s) pour ajuster leurs analyses.</div>`;
 
-  html+=`<div class="sect"><div class="row"><span class="n">01</span><h2>Stations experts</h2></div><p class="hint">Chaque expert propose 0 à 2 paris — il s'abstient s'il n'a rien de fiable au seuil de ${THRESHOLD}%, et tient compte de ses résultats passés.</p></div>
+  html+=`<div class="sect"><div class="row"><span class="n">01</span><h2>Stations experts</h2></div><p class="hint">Chaque expert propose 0 à ${state.maxPicks} pari(s) — il s'abstient s'il n'a rien de fiable au seuil de ${TH()}%, et tient compte de ses résultats passés.</p></div>
     <div class="grid">${state.experts.map(expertHTML).join("")}${addCardHTML()}</div>`;
 
   if(inc.length>0){
@@ -513,7 +530,7 @@ function renderAnalyse(){
         return `<div style="margin-top:16px;text-align:center"><button class="go" data-act="validate" style="margin:0;background:var(--green);color:#062317">${ICO.check} VALIDER ET ENREGISTRER DANS L'HISTORIQUE</button><div style="color:var(--muted);font-size:12px;margin-top:8px;line-height:1.5">${reminder}</div><div style="color:var(--dim);font-size:11px;margin-top:4px">Le coupon n'est ajouté à l'historique qu'après validation. Le tableau se réinitialisera ensuite.</div></div>`;
       })():""}`;
   } else if(state.done){
-    html+=`<div class="empty">Aucune sélection n'a franchi le seuil de ${THRESHOLD}%. Résultat honnête : forcer un combiné sous le seuil dégrade le rendement.</div>`;
+    html+=`<div class="empty">Aucune sélection n'a franchi le seuil de ${TH()}%. Résultat honnête : forcer un combiné sous le seuil dégrade le rendement.</div>`;
   }
   return html;
 }
@@ -653,6 +670,8 @@ function render(){
   $("view").innerHTML = state.tab==="analyse"?renderAnalyse():renderHistorique();
   renderModal();
   const bk=$("bankroll"); if(bk) bk.addEventListener("input",e=>{state.bankroll=Math.max(1,Number(e.target.value)||0);});
+  const ths=$("th-slider"); if(ths) ths.addEventListener("input",e=>{state.threshold=Number(e.target.value)||80;["thlab","thlab2"].forEach(i=>{const l=$(i);if(l)l.textContent=state.threshold+"%";});});
+  const mps=$("mp-slider"); if(mps) mps.addEventListener("input",e=>{state.maxPicks=Number(e.target.value)||2;const l=$("mplab2");if(l)l.textContent=state.maxPicks;const l2=$("mplab");if(l2)l2.textContent=state.maxPicks+" pari(s)/expert";document.querySelectorAll('select[data-act="set-mp"] option[value="0"]').forEach(o=>o.textContent="Défaut ("+state.maxPicks+")");});
   const ws=$("win-start"); if(ws) ws.addEventListener("input",e=>{state.winStartH=Number(e.target.value)||1;const l=$("wlab-start");if(l)l.textContent=state.winStartH+" h";});
   const we=$("win-end"); if(we) we.addEventListener("input",e=>{state.winEndD=Number(e.target.value)||7;const l=$("wlab-end");if(l)l.textContent=state.winEndD+" j";});
   const stk=$("stake"); if(stk) stk.addEventListener("input",e=>{
@@ -692,6 +711,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const el=e.target.closest("[data-act]"); if(!el) return;
+  if(el.dataset.act==="set-mp"){const ex=state.experts.find(x=>x.id===el.dataset.e);if(ex){ex.mp=Number(el.value)||0;}return;}
   if(el.dataset.act==="pick"){togglePick(el.dataset.e,el.dataset.k);}
   else if(el.dataset.act==="draft-sport"){state.draft.sport=el.value;}
   else if(el.dataset.act==="catalog-select"){
