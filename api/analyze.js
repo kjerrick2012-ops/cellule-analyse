@@ -88,8 +88,9 @@ async function fetchRealOdds(comp, sport) {
 // ---------------------------------------------------------------------
 // 2) Analyse experte via l'API Anthropic (avec recherche web)
 // ---------------------------------------------------------------------
-async function analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours) {
-  const MINCONF = Number(threshold) || 80;
+async function analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours, maxPicks) {
+  const MINCONF = Math.min(88, Math.max(50, Number(threshold) || 80));
+  const NMAX = Math.min(5, Math.max(1, Number(maxPicks) || 2));
   const startH = Number(winStartHours) > 0 ? Number(winStartHours) : 2;
   const endH = Number(winEndHours) > startH ? Number(winEndHours) : 7 * 24;
   const nowMs = Date.now();
@@ -111,7 +112,7 @@ async function analyze(sport, comp, oddsData, history, threshold, winStartHours,
     `(3) ne gonfle JAMAIS la confiance pour faire plaisir ; ` +
     `(4) n'invente JAMAIS de statistiques — base-toi uniquement sur des données réelles ; ` +
     `(5) si tu ne peux pas vérifier une donnée, baisse la confiance et signale-le dans "risk" ; ` +
-    `(6) QUALITÉ AVANT VOLUME : tu peux renvoyer 0, 1 ou 2 paris. Ne propose QUE des paris dont la confiance honnête atteint au moins ${MINCONF}%. ` +
+    `(6) QUALITÉ AVANT VOLUME : tu peux renvoyer de 0 à ${NMAX} paris. Essaie d'atteindre ${NMAX} paris SI ET SEULEMENT SI chacun mérite honnêtement le seuil. Ne propose QUE des paris dont la confiance honnête atteint au moins ${MINCONF}%. ` +
     `Si aucun match ne mérite ce seuil cette semaine, renvoie "picks":[] et explique dans "note". Ne remplis JAMAIS pour atteindre un quota. Date du jour : ${TODAY}.`;
 
   // Résultats passés pris en compte (pas de ré-apprentissage statistique : simple relecture critique).
@@ -134,7 +135,7 @@ async function analyze(sport, comp, oddsData, history, threshold, winStartHours,
       `Voici de VRAIS matchs et cotes (décimal) récupérés via une API de cotes pour "${oddsData.competition}" :\n` +
       JSON.stringify(oddsData.events) + `\n\n` +
       windowRule + ` ` +
-      `Propose 0 à 2 paris (uniquement ceux atteignant honnêtement ${MINCONF}% de confiance) parmi ces matchs. Vérifie forme, absences et contexte via la recherche web. ` +
+      `Propose 0 à ${NMAX} paris (uniquement ceux atteignant honnêtement ${MINCONF}% de confiance) parmi ces matchs. Vérifie forme, absences et contexte via la recherche web. ` +
       `Dans "odds", reprends la cote réelle du marché recommandé et mets "oddsReal":true. ` +
       learning +
       `\nRéponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
@@ -142,7 +143,7 @@ async function analyze(sport, comp, oddsData, history, threshold, winStartHours,
     user =
       `Recherche sur le web les matchs réels de "${comp}". ` +
       windowRule + ` ` +
-      `Propose 0 à 2 paris, UNIQUEMENT ceux atteignant honnêtement ${MINCONF}% de confiance. Si "${comp}" n'offre rien de fiable, tu peux élargir aux divisions inférieures/coupes/ligues voisines — mais NE REMPLIS PAS pour faire du volume : mieux vaut 0 pari qu'un pari faible. ` +
+      `Propose 0 à ${NMAX} paris, UNIQUEMENT ceux atteignant honnêtement ${MINCONF}% de confiance. Si "${comp}" n'offre rien de fiable, tu peux élargir aux divisions inférieures/coupes/ligues voisines — mais NE REMPLIS PAS pour faire du volume : mieux vaut 0 pari qu'un pari faible. ` +
       `Comme les cotes ne viennent pas d'une API ici, mets "oddsReal":false et donne une cote estimée réaliste. ` +
       learning +
       `\nIndique la compétition réelle de chaque pari. Réponds UNIQUEMENT en JSON valide, sans texte ni markdown. Format exact :\n${schema}`;
@@ -198,10 +199,11 @@ module.exports = async (req, res) => {
     const threshold = (body && body.threshold) || 80;
     const winStartHours = (body && body.winStartHours) || 2;
     const winEndHours = (body && body.winEndHours) || 168;
+    const maxPicks = (body && body.maxPicks) || 2;
     if (!comp) { res.status(400).json({ error: "Compétition manquante" }); return; }
 
     const oddsData = await fetchRealOdds(comp, sport);
-    const parsed = await analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours);
+    const parsed = await analyze(sport, comp, oddsData, history, threshold, winStartHours, winEndHours, maxPicks);
 
     res.status(200).json({
       picks: parsed.picks || [],
